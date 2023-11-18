@@ -68,15 +68,21 @@ func (m *Migra) Init(ctx context.Context) error {
 
 // Push adds a migration to the database and executes it
 func (m *Migra) Push(ctx context.Context, migration *Migration) error {
+	if migration.Name == "" {
+		return errors.New("migration name is required")
+	}
+
+	if migration.Up == "" {
+		return errors.New("no up migration specified")
+	}
+
 	tx, err := m.db.Begin()
 	if err != nil {
 		return err
 	}
 
 	defer tx.Rollback()
-
 	row := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT name FROM %s WHERE name = $1", m.tableName), migration.Name)
-
 	var name string
 	row.Scan(&name)
 
