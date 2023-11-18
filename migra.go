@@ -86,14 +86,25 @@ func (m *Migra) Push(ctx context.Context, migration *Migration) error {
 	}
 
 	if err := m.insertMigrationTx(ctx, tx, migration); err != nil {
-		return err
+		return fmt.Errorf("migration %s failed: %w", migration.Name, err)
 	}
 
 	if err := m.upMigrationTx(ctx, tx, migration); err != nil {
-		return err
+		return fmt.Errorf("migration %s failed: %w", migration.Name, err)
 	}
 
 	return tx.Commit()
+}
+
+// PushMany pushes multiple migrations and returns first error encountered
+func (m *Migra) PushMany(ctx context.Context, migrations []Migration) error {
+	for i := range migrations {
+		if err := m.Push(ctx, &migrations[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Pop undoes the last executed migration
