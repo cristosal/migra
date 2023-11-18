@@ -2,8 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"text/tabwriter"
+	"time"
 
 	"github.com/cristosal/migra"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -13,10 +16,13 @@ import (
 var (
 	connectionString string
 	driver           string
+	popUntil         string
+	popAll           bool
 
 	root = &cobra.Command{
-		Use:   "migra",
-		Short: "Migration commands",
+		Use:          "migra",
+		Short:        "Migration commands",
+		SilenceUsage: true,
 	}
 
 	initialize = &cobra.Command{
@@ -34,9 +40,8 @@ var (
 	}
 
 	pop = &cobra.Command{
-		Use:          "pop",
-		Short:        "Undo last migration",
-		SilenceUsage: true,
+		Use:   "pop",
+		Short: "Undo last migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := sql.Open(driver, getConnectionString())
 			if err != nil {
@@ -44,8 +49,21 @@ var (
 			}
 
 			m := migra.New(db)
-			if err := m.Pop(cmd.Context()); err != nil {
-				return err
+
+			if popAll {
+				if err := m.PopAll(cmd.Context()); err != nil {
+					return err
+				}
+
+			} else if popUntil == "" {
+				if err := m.Pop(cmd.Context()); err != nil {
+					return err
+				}
+			} else {
+				if err := m.PopUntil(cmd.Context(), popUntil); err != nil {
+					return err
+				}
+
 			}
 
 			fmt.Println("migration popped")
@@ -54,9 +72,8 @@ var (
 	}
 
 	push = &cobra.Command{
-		Use:          "push",
-		Short:        "Pushes a new migration",
-		SilenceUsage: true,
+		Use:   "push",
+		Short: "Pushes a new migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := sql.Open(driver, getConnectionString())
 			if err != nil {
@@ -73,19 +90,53 @@ var (
 		},
 	}
 
+	list = &cobra.Command{
+		Use:   "list",
+		Short: "list all migrations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := sql.Open(driver, getConnectionString())
+			if err != nil {
+				return err
+			}
+
+			m := migra.New(db)
+			migrations, err := m.List(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			if len(migrations) == 0 {
+				return errors.New("no migrations")
+			}
+
+			tw := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+			defer tw.Flush()
+			fmt.Fprintf(tw, "| %s\t| %s\t| %s\t| %s\n", "ID", "Name", "Description", "Migrated At")
+			for i := range migrations {
+				mig := migrations[i]
+				fmt.Fprintf(tw, "| %d\t| %s\t| %s\t| %s\n", mig.ID, mig.Name, mig.Description, mig.MigratedAt.Format(time.RFC1123))
+			}
+			return nil
+
+		},
+	}
+
 	migration = migra.Migration{
 		//
 	}
 )
 
 func main() {
-	root.AddCommand(initialize, push, pop)
+	root.AddCommand(initialize, list, push, pop)
 	root.Execute()
 }
 
 func init() {
 	root.PersistentFlags().StringVar(&connectionString, "conn", "", "database connection string. If unset, defaults to environment variable MIGRA_CONNECTION_STRING")
 	root.PersistentFlags().StringVar(&driver, "driver", "pgx", "database driver")
+
+	pop.Flags().StringVar(&popUntil, "until", "", "pop until migration with this name is reached")
+	pop.Flags().BoolVarP(&popAll, "all", "a", false, "pop all migrations")
 
 	push.Flags().StringVar(&migration.Name, "name", "", "name of migration")
 	push.Flags().StringVar(&migration.Description, "desc", "", "description of migration")
