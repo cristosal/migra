@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// DefaultMigrationTable name
 const DefaultMigrationTable = "_migra"
 
 // Migration is a structured change to the database
@@ -163,6 +164,56 @@ func (m *Migra) PopAll(ctx context.Context) error {
 	}
 
 	return err
+}
+
+// PopUntil pops until it reaches a migration with given name
+func (m *Migra) PopUntil(ctx context.Context, name string) error {
+	var (
+		mig *Migration
+		err error
+	)
+
+	for {
+		mig, err = m.GetLatest(ctx)
+
+		if err != nil {
+			return err
+		}
+
+		if mig.Name == name {
+			return nil
+		}
+
+		if err := m.Pop(ctx); err != nil {
+			return err
+		}
+	}
+
+}
+
+// GetLatest returns the latest migration executed
+func (m *Migra) GetLatest(ctx context.Context) (*Migration, error) {
+	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position DESC`, m.tableName)
+	row := m.db.QueryRowContext(ctx, sql)
+
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
+
+	var mig Migration
+	if err := row.Scan(
+		&mig.ID,
+		&mig.Name,
+		&mig.Description,
+		&mig.Up,
+		&mig.Down,
+		&mig.Position,
+		&mig.MigratedAt); err != nil {
+		return nil, err
+	}
+
+	return &mig, nil
+
 }
 
 // List returns all the executed migrations
