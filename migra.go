@@ -11,6 +11,10 @@ import (
 // DefaultMigrationTable name
 const DefaultMigrationTable = "_migra"
 
+var (
+	ErrNoMigration = errors.New("no migration found")
+)
+
 // Migration is a structured change to the database
 type Migration struct {
 	ID          int64
@@ -116,8 +120,6 @@ func (m *Migra) PushMany(ctx context.Context, migrations []Migration) error {
 
 // Pop undoes the last executed migration
 func (m *Migra) Pop(ctx context.Context) error {
-	sql := fmt.Sprintf(`SELECT name, down FROM %s ORDER BY position DESC`, m.tableName)
-
 	tx, err := m.db.Begin()
 	if err != nil {
 		return err
@@ -125,10 +127,8 @@ func (m *Migra) Pop(ctx context.Context) error {
 
 	defer tx.Rollback()
 
-	row := tx.QueryRowContext(ctx, sql)
-	if err := row.Err(); err != nil {
-		return err
-	}
+	stmt := fmt.Sprintf(`SELECT name, down FROM %s ORDER BY position DESC`, m.tableName)
+	row := tx.QueryRowContext(ctx, stmt)
 
 	var (
 		name string
@@ -136,6 +136,10 @@ func (m *Migra) Pop(ctx context.Context) error {
 	)
 
 	if err := row.Scan(&name, &down); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNoMigration
+		}
+
 		return err
 	}
 
@@ -143,8 +147,8 @@ func (m *Migra) Pop(ctx context.Context) error {
 		return err
 	}
 
-	sql = fmt.Sprintf("DELETE FROM %s WHERE name = $1", m.tableName)
-	if _, err := tx.ExecContext(ctx, sql, name); err != nil {
+	stmt = fmt.Sprintf("DELETE FROM %s WHERE name = $1", m.tableName)
+	if _, err := tx.ExecContext(ctx, stmt, name); err != nil {
 		return err
 	}
 
@@ -152,18 +156,23 @@ func (m *Migra) Pop(ctx context.Context) error {
 }
 
 // PopAll pops all migrations
-func (m *Migra) PopAll(ctx context.Context) error {
-	var err error
+func (m *Migra) PopAll(ctx context.Context) (int, error) {
+	var n int
 
-	for err == nil {
-		err = m.Pop(ctx)
+	for {
+		if err := m.Pop(ctx); err != nil {
+			if errors.Is(err, ErrNoMigration) {
+				if n == 0 {
+					return 0, ErrNoMigration
+				}
+
+				return n, nil
+			}
+
+			return n, err
+		}
+		n++
 	}
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-
-	return err
 }
 
 // PopUntil pops until it reaches a migration with given name

@@ -51,22 +51,23 @@ var (
 			m := migra.New(db)
 
 			if popAll {
-				if err := m.PopAll(cmd.Context()); err != nil {
+				n, err := m.PopAll(cmd.Context())
+				if err != nil {
 					return err
 				}
-
+				fmt.Printf("popped %d migrations\n", n)
 			} else if popUntil == "" {
 				if err := m.Pop(cmd.Context()); err != nil {
 					return err
 				}
+
+				fmt.Println("popped 1 migration")
 			} else {
 				if err := m.PopUntil(cmd.Context(), popUntil); err != nil {
 					return err
 				}
-
 			}
 
-			fmt.Println("migration popped")
 			return nil
 		},
 	}

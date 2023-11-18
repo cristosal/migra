@@ -56,7 +56,7 @@ func initMigra(t *testing.T) *migra.Migra {
 
 func TestMigrateUp(t *testing.T) {
 	m := initMigra(t)
-	if err := m.PopAll(ctx); err != nil {
+	if _, err := m.PopAll(ctx); err != nil {
 		t.Fatal(err)
 	}
 
