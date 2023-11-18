@@ -12,6 +12,28 @@ import (
 var ctx = context.Background()
 var connectionString = "postgres://migra:migra@localhost:5432/migra"
 
+func TestRepeatedUp(t *testing.T) {
+	m := initMigra(t)
+
+	migration := migra.Migration{
+		Name: "Migration",
+		Up:   "CREATE TABLE test_table(id SERIAL PRIMARY KEY)",
+		Down: "DROP TABLE test_table",
+	}
+
+	t.Cleanup(func() {
+		m.PopAll(ctx)
+	})
+
+	if err := m.Push(ctx, &migration); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Push(ctx, &migration); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func initMigra(t *testing.T) *migra.Migra {
 	db, err := sql.Open("pgx", connectionString)
 

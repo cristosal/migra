@@ -51,14 +51,14 @@ func (m *Migra) CreateMigrationTable(ctx context.Context) error {
 		m.tableName = DefaultMigrationTable
 	}
 
-	_, err := m.db.ExecContext(ctx, fmt.Sprintf(`create table if not exists %s (
-		id serial primary key,
-		name varchar(255) not null unique,
-		description text,
-		up text,
-		down text,
-		position serial not null,
-		migrated_at timestamptz
+	_, err := m.db.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(255) NOT NULL UNIQUE,
+		description TEXT,
+		up TEXT,
+		down TEXT,
+		position SERIAL NOT NULL,
+		migrated_at TIMESTAMPTZ
 	);`, m.tableName))
 
 	return err
@@ -69,6 +69,18 @@ func (m *Migra) Push(ctx context.Context, migration *Migration) error {
 	tx, err := m.db.Begin()
 	if err != nil {
 		return err
+	}
+
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT name FROM %s WHERE name = $1", m.tableName), migration.Name)
+
+	var name string
+	row.Scan(&name)
+
+	if name == migration.Name {
+		// we have already pushed it
+		return nil
 	}
 
 	if err := m.insertMigrationTx(ctx, tx, migration); err != nil {
@@ -119,6 +131,7 @@ func (m *Migra) Pop(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// PopAll pops all migrations
 func (m *Migra) PopAll(ctx context.Context) error {
 	var err error
 
@@ -170,7 +183,7 @@ func (m *Migra) DropMigrationTable(ctx context.Context) error {
 }
 
 func (m *Migra) insertMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) error {
-	sql := fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING", m.tableName)
+	sql := fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4)", m.tableName)
 	_, err := tx.ExecContext(ctx, sql, mig.Name, mig.Description, mig.Up, mig.Down)
 	return err
 }
