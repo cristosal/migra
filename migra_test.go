@@ -34,31 +34,48 @@ func initMigra(t *testing.T) *migra.Migra {
 
 func TestMigrateUp(t *testing.T) {
 	m := initMigra(t)
+	if err := m.PopAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+
 	migrations := []migra.Migration{
 		{
 			Name:        "Test Users",
-			Description: "Creates test users table with username and password fields",
+			Description: "Creates a test users table with username and password fields",
 			Up: `CREATE TABLE test_users (
-			id SERIAL PRIMARY KEY,
-			username VARCHAR(255) NOT NULL UNIQUE,
-			password VARCHAR(1024) NOT NULL
-		);`,
+				id SERIAL PRIMARY KEY,
+				username VARCHAR(255) NOT NULL UNIQUE,
+				password VARCHAR(1024) NOT NULL,
+				created_at TIMESTAMPTZ DEFAULT NOW()
+			);`,
 			Down: `DROP TABLE test_users;`,
 		},
 		{
-			Name:        "Default User",
-			Description: "Adds a default test user",
-			Up:          "INSERT INTO test_users (username, password) VALUES ('foo', 'bar')",
-			Down:        "DELETE FROM test_users WHERE username = 'foo'",
+			Name:        "First Test User",
+			Description: "Adds first test user",
+			Up:          "INSERT INTO test_users (username, password) VALUES ('first', 'password')",
+			Down:        "DELETE FROM test_users WHERE username = 'first'",
+		},
+		{
+			Name:        "Second Test User",
+			Description: "Adds a second test user",
+			Up:          "INSERT INTO test_users (username, password) VALUES ('second', 'password')",
+			Down:        "DELETE FROM test_users WHERE username = 'second'",
 		},
 	}
 
 	for i := range migrations {
-		if err := m.Push(ctx, &migrations[i]); err != nil {
-			t.Fatal(err)
+		mig := &migrations[i]
+		if err := m.Push(ctx, mig); err != nil {
+			t.Fatalf("error while executing miration %s: %v", mig.Name, err)
 		}
 	}
 
+	t.Cleanup(func() {
+		m.PopAll(ctx)
+	})
+
+	// check that migrations show up in list migrations
 	found, err := m.ListMigrations(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -67,16 +84,27 @@ func TestMigrateUp(t *testing.T) {
 	if len(found) != len(migrations) {
 		t.Fatalf("expected %d migrations, got %d", len(migrations), len(found))
 	}
-}
 
-func TestInitMigrationTables(t *testing.T) {
-	m := initMigra(t)
+	expectUsername := func(t *testing.T, username string) {
+		row := m.DB().QueryRow("SELECT username FROM test_users ORDER BY created_at DESC")
+		if err := row.Err(); err != nil {
+			t.Fatal(err)
+		}
 
-	if err := m.CreateMigrationTable(ctx); err != nil {
+		var found string
+		if err := row.Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+
+		if found != username {
+			t.Fatalf("expected username %s got %s", username, found)
+		}
+	}
+
+	expectUsername(t, "second")
+	if err := m.Pop(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Cleanup(func() {
-		m.DropMigrationTable(ctx)
-	})
+	expectUsername(t, "first")
 }

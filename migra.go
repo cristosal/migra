@@ -3,6 +3,7 @@ package migra
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -32,6 +33,11 @@ func New(db *sql.DB) *Migra {
 	}
 }
 
+// DB Allows access to the underlying sql database
+func (m *Migra) DB() *sql.DB {
+	return m.db
+}
+
 // SetMigrationsTable sets the default table where migrations will be stored and executed
 func (m *Migra) SetMigrationsTable(table string) *Migra {
 	m.tableName = table
@@ -40,7 +46,6 @@ func (m *Migra) SetMigrationsTable(table string) *Migra {
 
 // CreateMigrationTable creates the table where migrations will be stored and executed.
 // The name of the table can be set using the SetMigrationsTable method.
-// Otherwise, the value of DefaultMigrationTable is used.
 func (m *Migra) CreateMigrationTable(ctx context.Context) error {
 	if m.tableName == "" {
 		m.tableName = DefaultMigrationTable
@@ -79,20 +84,52 @@ func (m *Migra) Push(ctx context.Context, migration *Migration) error {
 
 // Pop undoes the last executed migration
 func (m *Migra) Pop(ctx context.Context) error {
-	sql := fmt.Sprintf(`SELECT down from %s WHERE migrated_at IS NULL ORDER BY position DESC`, m.tableName)
+	sql := fmt.Sprintf(`SELECT name, down FROM %s ORDER BY position DESC`, m.tableName)
 
-	row := m.db.QueryRowContext(ctx, sql)
+	tx, err := m.db.Begin()
+	if err != nil {
+		return err
+	}
 
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, sql)
 	if err := row.Err(); err != nil {
 		return err
 	}
 
-	var down string
-	if err := row.Scan(&down); err != nil {
+	var (
+		name string
+		down string
+	)
+
+	if err := row.Scan(&name, &down); err != nil {
 		return err
 	}
 
-	_, err := m.db.ExecContext(ctx, down)
+	if _, err := tx.ExecContext(ctx, down); err != nil {
+		return err
+	}
+
+	sql = fmt.Sprintf("DELETE FROM %s WHERE name = $1", m.tableName)
+	if _, err := tx.ExecContext(ctx, sql, name); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (m *Migra) PopAll(ctx context.Context) error {
+	var err error
+
+	for err == nil {
+		err = m.Pop(ctx)
+	}
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+
 	return err
 }
 
