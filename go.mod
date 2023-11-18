@@ -1,4 +1,4 @@
-module github.com/cristosa/migra
+module github.com/cristosal/migra
 
 go 1.21.4
 

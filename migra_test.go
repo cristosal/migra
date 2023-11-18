@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/cristosa/migra"
+	"github.com/cristosal/migra"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
