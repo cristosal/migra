@@ -33,8 +33,9 @@ func New(db *sql.DB) *Migra {
 }
 
 // SetMigrationsTable sets the default table where migrations will be stored and executed
-func (m *Migra) SetMigrationsTable(table string) {
+func (m *Migra) SetMigrationsTable(table string) *Migra {
 	m.tableName = table
+	return m
 }
 
 // CreateMigrationTable creates the table where migrations will be stored and executed.
@@ -76,6 +77,25 @@ func (m *Migra) Push(ctx context.Context, migration *Migration) error {
 	return tx.Commit()
 }
 
+// Pop undoes the last executed migration
+func (m *Migra) Pop(ctx context.Context) error {
+	sql := fmt.Sprintf(`SELECT down from %s WHERE migrated_at IS NULL ORDER BY position DESC`, m.tableName)
+
+	row := m.db.QueryRowContext(ctx, sql)
+
+	if err := row.Err(); err != nil {
+		return err
+	}
+
+	var down string
+	if err := row.Scan(&down); err != nil {
+		return err
+	}
+
+	_, err := m.db.ExecContext(ctx, down)
+	return err
+}
+
 // ListMigrations returns all the executed migrations
 func (m *Migra) ListMigrations(ctx context.Context) ([]Migration, error) {
 	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position ASC`, m.tableName)
@@ -108,7 +128,7 @@ func (m *Migra) ListMigrations(ctx context.Context) ([]Migration, error) {
 
 // DropMigrationTable drops the migrations table
 func (m *Migra) DropMigrationTable(ctx context.Context) error {
-	_, err := m.db.ExecContext(ctx, fmt.Sprintf("drop table %s", m.tableName))
+	_, err := m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", m.tableName))
 	return err
 }
 
@@ -123,7 +143,7 @@ func (m *Migra) upMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) e
 		return err
 	}
 
-	sql := fmt.Sprintf("update %s set migrated_at = now() where name = $1", m.tableName)
+	sql := fmt.Sprintf("UPDATE %s SET migrated_at = NOW() WHERE name = $1", m.tableName)
 	_, err := tx.ExecContext(ctx, sql, mig.Name)
 	return err
 }
