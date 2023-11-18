@@ -43,12 +43,12 @@ func initMigra(t *testing.T) *migra.Migra {
 
 	m := migra.New(db)
 
-	if err := m.CreateMigrationTable(ctx); err != nil {
+	if err := m.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		m.DropMigrationTable(ctx)
+		m.Drop(ctx)
 	})
 
 	return m
@@ -98,7 +98,7 @@ func TestMigrateUp(t *testing.T) {
 	})
 
 	// check that migrations show up in list migrations
-	found, err := m.ListMigrations(ctx)
+	found, err := m.List(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

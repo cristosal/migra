@@ -10,6 +10,7 @@ import (
 
 const DefaultMigrationTable = "_migra"
 
+// Migration is a structured change to the database
 type Migration struct {
 	ID          int64
 	Name        string
@@ -20,6 +21,7 @@ type Migration struct {
 	MigratedAt  time.Time
 }
 
+// Migra is contains methods for migrating an sql database
 type Migra struct {
 	db        *sql.DB
 	tableName string
@@ -44,9 +46,9 @@ func (m *Migra) SetMigrationsTable(table string) *Migra {
 	return m
 }
 
-// CreateMigrationTable creates the table where migrations will be stored and executed.
+// Init creates the table where migrations will be stored and executed.
 // The name of the table can be set using the SetMigrationsTable method.
-func (m *Migra) CreateMigrationTable(ctx context.Context) error {
+func (m *Migra) Init(ctx context.Context) error {
 	if m.tableName == "" {
 		m.tableName = DefaultMigrationTable
 	}
@@ -146,8 +148,8 @@ func (m *Migra) PopAll(ctx context.Context) error {
 	return err
 }
 
-// ListMigrations returns all the executed migrations
-func (m *Migra) ListMigrations(ctx context.Context) ([]Migration, error) {
+// List returns all the executed migrations
+func (m *Migra) List(ctx context.Context) ([]Migration, error) {
 	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position ASC`, m.tableName)
 	rows, err := m.db.QueryContext(ctx, sql)
 
@@ -176,8 +178,8 @@ func (m *Migra) ListMigrations(ctx context.Context) ([]Migration, error) {
 	return migrations, nil
 }
 
-// DropMigrationTable drops the migrations table
-func (m *Migra) DropMigrationTable(ctx context.Context) error {
+// Drop the migrations table
+func (m *Migra) Drop(ctx context.Context) error {
 	_, err := m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", m.tableName))
 	return err
 }
