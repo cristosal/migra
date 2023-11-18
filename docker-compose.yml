@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=migra
+      - POSTGRES_DB=migra
+      - POSTGRES_PASSWORD=migra
+    ports:
+      - 5432:5432
