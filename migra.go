@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"time"
@@ -84,6 +85,36 @@ func (m *Migra) PushDir(ctx context.Context, dirname string) error {
 
 	for i := range entries {
 		filepath := path.Join(dirname, entries[i].Name())
+		v := viper.New()
+		v.SetConfigFile(filepath)
+
+		if err := v.ReadInConfig(); err != nil {
+			return err
+		}
+
+		var migration Migration
+
+		if err := v.Unmarshal(&migration); err != nil {
+			return err
+		}
+
+		if err := m.Push(ctx, &migration); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// PushDirFS pushes all migrations in a directory using fs.FS
+func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS) error {
+	entries, err := fs.ReadDir(filesystem, ".") // Read entries from the current directory
+	if err != nil {
+		return err
+	}
+
+	for i := range entries {
+		filepath := entries[i].Name()
 		v := viper.New()
 		v.SetConfigFile(filepath)
 
