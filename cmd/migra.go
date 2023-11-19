@@ -18,6 +18,7 @@ var (
 	driver           string
 	popUntil         string
 	popAll           bool
+	pushDir          string
 
 	root = &cobra.Command{
 		Use:          "migra",
@@ -82,8 +83,15 @@ var (
 			}
 
 			m := migra.New(db)
-			if err := m.Push(cmd.Context(), &migration); err != nil {
-				return err
+
+			if pushDir != "" {
+				if err := m.PushDir(cmd.Context(), pushDir); err != nil {
+					return err
+				}
+			} else {
+				if err := m.Push(cmd.Context(), &migration); err != nil {
+					return err
+				}
 			}
 
 			fmt.Println("done")
@@ -139,6 +147,7 @@ func init() {
 	pop.Flags().StringVar(&popUntil, "until", "", "pop until migration with this name is reached")
 	pop.Flags().BoolVarP(&popAll, "all", "a", false, "pop all migrations")
 
+	push.Flags().StringVarP(&pushDir, "dir", "d", "", "directory containing migration files")
 	push.Flags().StringVar(&migration.Name, "name", "", "name of migration")
 	push.Flags().StringVar(&migration.Description, "desc", "", "description of migration")
 	push.Flags().StringVar(&migration.Up, "up", "", "up migration sql")
