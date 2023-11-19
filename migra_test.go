@@ -3,6 +3,8 @@ package migra_test
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/cristosal/migra"
@@ -10,7 +12,35 @@ import (
 )
 
 var ctx = context.Background()
-var connectionString = "postgres://migra:migra@localhost:5432/migra"
+var connectionString = ""
+
+func TestPushDir(t *testing.T) {
+	m := initMigra(t)
+	dirpath, err := os.MkdirTemp(os.TempDir(), "pushdir")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		os.RemoveAll(dirpath)
+		m.PopAll(context.Background())
+	})
+
+	content := `
+name: "First Migration"
+description: "Description of my first migration"
+up: "CREATE TABLE test_first_migration_table(id serial primary key)"
+down: "DROP TABLE test_first_migration_table;"`
+
+	if err := os.WriteFile(path.Join(dirpath, "1.yml"), []byte(content), 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.PushDir(context.Background(), dirpath); err != nil {
+		t.Fatal(err)
+	}
+
+}
 
 func TestRepeatedUp(t *testing.T) {
 	m := initMigra(t)

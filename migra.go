@@ -5,7 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 // DefaultMigrationTable name
@@ -18,10 +22,10 @@ var (
 // Migration is a structured change to the database
 type Migration struct {
 	ID          int64
-	Name        string
-	Description string
-	Up          string
-	Down        string
+	Name        string `mapstructure:"name"`
+	Description string `mapstructure:"description"`
+	Up          string `mapstructure:"up"`
+	Down        string `mapstructure:"down"`
 	Position    int64
 	MigratedAt  time.Time
 }
@@ -69,6 +73,36 @@ func (m *Migra) Init(ctx context.Context) error {
 	);`, m.tableName))
 
 	return err
+}
+
+// PushDir pushes all migrationsin a directory
+func (m *Migra) PushDir(ctx context.Context, dirname string) error {
+	entries, err := os.ReadDir(dirname)
+	if err != nil {
+		return err
+	}
+
+	for i := range entries {
+		filepath := path.Join(dirname, entries[i].Name())
+		v := viper.New()
+		v.SetConfigFile(filepath)
+
+		if err := v.ReadInConfig(); err != nil {
+			return err
+		}
+
+		var migration Migration
+
+		if err := v.Unmarshal(&migration); err != nil {
+			return err
+		}
+
+		if err := m.Push(ctx, &migration); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Push adds a migration to the database and executes it
