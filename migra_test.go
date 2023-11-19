@@ -14,6 +14,36 @@ import (
 var ctx = context.Background()
 var connectionString = ""
 
+func TestPushDirFS(t *testing.T) {
+	m := initMigra(t)
+	dirpath, err := os.MkdirTemp(os.TempDir(), "pushdir")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filesystem := os.DirFS(dirpath)
+
+	t.Cleanup(func() {
+		os.RemoveAll(dirpath)
+		m.PopAll(context.Background())
+	})
+
+	content := `
+name: "First Migration"
+description: "Description of my first migration"
+up: "CREATE TABLE test_first_migration_table(id serial primary key)"
+down: "DROP TABLE test_first_migration_table;"`
+
+	if err := os.WriteFile(path.Join(dirpath, "1.yml"), []byte(content), 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.PushDirFS(context.Background(), filesystem); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
 func TestPushDir(t *testing.T) {
 	m := initMigra(t)
 	dirpath, err := os.MkdirTemp(os.TempDir(), "pushdir")

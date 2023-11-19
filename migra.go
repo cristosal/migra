@@ -113,27 +113,40 @@ func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS) error {
 		return err
 	}
 
-	for i := range entries {
-		filepath := entries[i].Name()
-		v := viper.New()
-		v.SetConfigFile(filepath)
-
-		if err := v.ReadInConfig(); err != nil {
-			return err
-		}
-
-		var migration Migration
-
-		if err := v.Unmarshal(&migration); err != nil {
-			return err
-		}
-
-		if err := m.Push(ctx, &migration); err != nil {
+	for _, entry := range entries {
+		if err := m.PushFileFS(ctx, filesystem, entry.Name()); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// PushFileFS pushes a file with given name from the filesystem
+func (m *Migra) PushFileFS(ctx context.Context, filesystem fs.FS, filename string) error {
+	v := viper.New()
+
+	f, err := filesystem.Open(path.Join(".", filename))
+
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	ext := path.Ext(filename)
+	v.SetConfigType(ext[1:])
+
+	if err := v.ReadConfig(f); err != nil {
+		return err
+	}
+
+	var migration Migration
+	if err := v.Unmarshal(&migration); err != nil {
+		return err
+	}
+
+	return m.Push(ctx, &migration)
 }
 
 // Push adds a migration to the database and executes it
