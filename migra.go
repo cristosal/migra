@@ -76,7 +76,7 @@ func (m *Migra) Init(ctx context.Context) error {
 	return err
 }
 
-// PushDir pushes all migrationsin a directory
+// PushDir pushes all migrations inside a directory
 func (m *Migra) PushDir(ctx context.Context, dirname string) error {
 	entries, err := os.ReadDir(dirname)
 	if err != nil {
@@ -85,25 +85,29 @@ func (m *Migra) PushDir(ctx context.Context, dirname string) error {
 
 	for i := range entries {
 		filepath := path.Join(dirname, entries[i].Name())
-		v := viper.New()
-		v.SetConfigFile(filepath)
-
-		if err := v.ReadInConfig(); err != nil {
-			return err
-		}
-
-		var migration Migration
-
-		if err := v.Unmarshal(&migration); err != nil {
-			return err
-		}
-
-		if err := m.Push(ctx, &migration); err != nil {
+		if err := m.PushFile(ctx, filepath); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// PushFile pusehs a migration from a file
+func (m *Migra) PushFile(ctx context.Context, filepath string) error {
+	v := viper.New()
+	v.SetConfigFile(filepath)
+	if err := v.ReadInConfig(); err != nil {
+		return err
+	}
+
+	var migration Migration
+
+	if err := v.Unmarshal(&migration); err != nil {
+		return err
+	}
+
+	return m.Push(ctx, &migration)
 }
 
 // PushDirFS pushes all migrations in a directory using fs.FS
@@ -196,7 +200,7 @@ func (m *Migra) PushMany(ctx context.Context, migrations []Migration) error {
 	return nil
 }
 
-// Pop undoes the last executed migration
+// Pop reverts the last migration
 func (m *Migra) Pop(ctx context.Context) error {
 	tx, err := m.db.Begin()
 	if err != nil {
@@ -233,7 +237,7 @@ func (m *Migra) Pop(ctx context.Context) error {
 	return tx.Commit()
 }
 
-// PopAll pops all migrations
+// PopAll reverts all migrations
 func (m *Migra) PopAll(ctx context.Context) (int, error) {
 	var n int
 
@@ -253,7 +257,7 @@ func (m *Migra) PopAll(ctx context.Context) (int, error) {
 	}
 }
 
-// PopUntil pops until it reaches a migration with given name
+// PopUntil pops until a migration with given name is reached
 func (m *Migra) PopUntil(ctx context.Context, name string) error {
 	var (
 		mig *Migration
