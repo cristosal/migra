@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"time"
@@ -13,8 +14,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-// DefaultMigrationTable name
-const DefaultMigrationTable = "_migra"
+const (
+	DefaultMigrationTable = "_migrations"
+	DefaultSchemaName     = "public"
+)
 
 var (
 	ErrNoMigration = errors.New("no migration found")
@@ -33,16 +36,23 @@ type Migration struct {
 
 // Migra is contains methods for migrating an sql database
 type Migra struct {
-	db        *sql.DB
-	tableName string
+	db         *sql.DB
+	tableName  string
+	schemaName string
 }
 
 // New creates a new Migra instance.
 func New(db *sql.DB) *Migra {
 	return &Migra{
-		db:        db,
-		tableName: DefaultMigrationTable,
+		db:         db,
+		tableName:  DefaultMigrationTable,
+		schemaName: DefaultSchemaName,
 	}
+}
+
+// Table returns the fully schema prefixed tablename
+func (m *Migra) Table() string {
+	return m.schemaName + "." + m.tableName
 }
 
 // DB Allows access to the underlying sql database
@@ -52,18 +62,37 @@ func (m *Migra) DB() *sql.DB {
 
 // SetMigrationsTable sets the default table where migrations will be stored and executed
 func (m *Migra) SetMigrationsTable(table string) *Migra {
-	m.tableName = table
+	if table != "" {
+		m.tableName = table
+	}
+	return m
+}
+
+func (m *Migra) SetSchema(schema string) *Migra {
+	if schema != "" {
+		m.schemaName = schema
+	}
+
 	return m
 }
 
 // Init creates the table where migrations will be stored and executed.
 // The name of the table can be set using the SetMigrationsTable method.
 func (m *Migra) Init(ctx context.Context) error {
+	if m.schemaName == "" {
+		m.schemaName = DefaultSchemaName
+	}
+
 	if m.tableName == "" {
 		m.tableName = DefaultMigrationTable
 	}
 
-	_, err := m.db.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+	_, err := m.db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", m.schemaName))
+	if err != nil {
+		return err
+	}
+
+	_, err = m.db.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id SERIAL PRIMARY KEY,
 		name VARCHAR(255) NOT NULL UNIQUE,
 		description TEXT,
@@ -71,7 +100,7 @@ func (m *Migra) Init(ctx context.Context) error {
 		down TEXT,
 		position SERIAL NOT NULL,
 		migrated_at TIMESTAMPTZ
-	);`, m.tableName))
+	);`, m.Table()))
 
 	return err
 }
@@ -110,25 +139,39 @@ func (m *Migra) PushFile(ctx context.Context, filepath string) error {
 	return m.Push(ctx, &migration)
 }
 
-// PushDirFS pushes all migrations in a directory using fs.FS
-func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS) error {
-	entries, err := fs.ReadDir(filesystem, ".") // Read entries from the current directory
+func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS, directory string) error {
+	// here is where we read
+	entries, err := fs.ReadDir(filesystem, directory)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		if err := m.PushFileFS(ctx, filesystem, entry.Name()); err != nil {
-			return err
+		filename := path.Join(directory, entry.Name())
+
+		if entry.IsDir() {
+			if err := m.PushDirFS(ctx, filesystem, filename); err != nil {
+				return err
+			}
+		} else {
+			if err := m.PushFileFS(ctx, filesystem, filename); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
+// PushFS pushes all migrations in a directory using fs.FS
+func (m *Migra) PushFS(ctx context.Context, filesystem fs.FS) error {
+	return m.PushDirFS(ctx, filesystem, ".")
+}
+
 // PushFileFS pushes a file with given name from the filesystem
 func (m *Migra) PushFileFS(ctx context.Context, filesystem fs.FS, filename string) error {
 	v := viper.New()
+	log.Printf("running file %s", filename)
 
 	f, err := filesystem.Open(path.Join(".", filename))
 
@@ -137,7 +180,6 @@ func (m *Migra) PushFileFS(ctx context.Context, filesystem fs.FS, filename strin
 	}
 
 	defer f.Close()
-
 	ext := path.Ext(filename)
 	v.SetConfigType(ext[1:])
 
@@ -154,36 +196,50 @@ func (m *Migra) PushFileFS(ctx context.Context, filesystem fs.FS, filename strin
 }
 
 // Push adds a migration to the database and executes it
-func (m *Migra) Push(ctx context.Context, migration *Migration) error {
-	if migration.Name == "" {
+func (m *Migra) Push(ctx context.Context, mig *Migration) error {
+	if mig.Name == "" {
 		return errors.New("migration name is required")
 	}
 
-	if migration.Up == "" {
+	if mig.Up == "" {
 		return errors.New("no up migration specified")
 	}
 
-	tx, err := m.db.Begin()
+	var (
+		sql  = fmt.Sprintf("SELECT name FROM %s WHERE name = $1", m.Table())
+		row  = m.db.QueryRowContext(ctx, sql, mig.Name)
+		name string
+	)
+
+	row.Scan(&name)
+
+	if name == mig.Name {
+		// we have already pushed it
+		return nil
+	}
+
+	tx, err := m.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
 	defer tx.Rollback()
-	row := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT name FROM %s WHERE name = $1", m.tableName), migration.Name)
-	var name string
-	row.Scan(&name)
 
-	if name == migration.Name {
-		// we have already pushed it
-		return nil
+	// insert record of the migration
+	sql = fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4)", m.Table())
+	if _, err := tx.ExecContext(ctx, sql, mig.Name, mig.Description, mig.Up, mig.Down); err != nil {
+		return err
 	}
 
-	if err := m.insertMigrationTx(ctx, tx, migration); err != nil {
-		return fmt.Errorf("migration %s failed: %w", migration.Name, err)
+	// execute up migration
+	if _, err := tx.ExecContext(ctx, mig.Up); err != nil {
+		return err
 	}
 
-	if err := m.upMigrationTx(ctx, tx, migration); err != nil {
-		return fmt.Errorf("migration %s failed: %w", migration.Name, err)
+	// set migration as executed
+	sql = fmt.Sprintf("UPDATE %s SET migrated_at = NOW() WHERE name = $1", m.Table())
+	if _, err := tx.ExecContext(ctx, sql, mig.Name); err != nil {
+		return err
 	}
 
 	return tx.Commit()
@@ -209,7 +265,7 @@ func (m *Migra) Pop(ctx context.Context) error {
 
 	defer tx.Rollback()
 
-	stmt := fmt.Sprintf(`SELECT name, down FROM %s ORDER BY position DESC`, m.tableName)
+	stmt := fmt.Sprintf(`SELECT name, down FROM %s ORDER BY position DESC`, m.Table())
 	row := tx.QueryRowContext(ctx, stmt)
 
 	var (
@@ -229,7 +285,7 @@ func (m *Migra) Pop(ctx context.Context) error {
 		return err
 	}
 
-	stmt = fmt.Sprintf("DELETE FROM %s WHERE name = $1", m.tableName)
+	stmt = fmt.Sprintf("DELETE FROM %s WHERE name = $1", m.Table())
 	if _, err := tx.ExecContext(ctx, stmt, name); err != nil {
 		return err
 	}
@@ -284,7 +340,7 @@ func (m *Migra) PopUntil(ctx context.Context, name string) error {
 
 // GetLatest returns the latest migration executed
 func (m *Migra) GetLatest(ctx context.Context) (*Migration, error) {
-	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position DESC`, m.tableName)
+	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position DESC`, m.Table())
 	row := m.db.QueryRowContext(ctx, sql)
 
 	if err := row.Err(); err != nil {
@@ -309,7 +365,7 @@ func (m *Migra) GetLatest(ctx context.Context) (*Migration, error) {
 
 // List returns all the executed migrations
 func (m *Migra) List(ctx context.Context) ([]Migration, error) {
-	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position ASC`, m.tableName)
+	sql := fmt.Sprintf(`SELECT id, name, description, up, down, position, migrated_at FROM %s ORDER BY position ASC`, m.Table())
 	rows, err := m.db.QueryContext(ctx, sql)
 
 	if err != nil {
@@ -339,12 +395,12 @@ func (m *Migra) List(ctx context.Context) ([]Migration, error) {
 
 // Drop the migrations table
 func (m *Migra) Drop(ctx context.Context) error {
-	_, err := m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", m.tableName))
+	_, err := m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", m.Table()))
 	return err
 }
 
 func (m *Migra) insertMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) error {
-	sql := fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4)", m.tableName)
+	sql := fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4)", m.Table())
 	_, err := tx.ExecContext(ctx, sql, mig.Name, mig.Description, mig.Up, mig.Down)
 	return err
 }
@@ -354,7 +410,7 @@ func (m *Migra) upMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) e
 		return err
 	}
 
-	sql := fmt.Sprintf("UPDATE %s SET migrated_at = NOW() WHERE name = $1", m.tableName)
+	sql := fmt.Sprintf("UPDATE %s SET migrated_at = NOW() WHERE name = $1", m.Table())
 	_, err := tx.ExecContext(ctx, sql, mig.Name)
 	return err
 }

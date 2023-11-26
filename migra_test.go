@@ -38,7 +38,7 @@ down: "DROP TABLE test_first_migration_table;"`
 		t.Fatal(err)
 	}
 
-	if err := m.PushDirFS(context.Background(), filesystem); err != nil {
+	if err := m.PushFS(context.Background(), filesystem); err != nil {
 		t.Fatal(err)
 	}
 
