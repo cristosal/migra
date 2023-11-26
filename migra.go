@@ -202,13 +202,13 @@ func (m *Migra) Push(ctx context.Context, mig *Migration) error {
 	}
 
 	if mig.Up == "" {
-		return errors.New("no up migration specified")
+		return errors.New("up sql is required")
 	}
 
 	var (
 		sql  = fmt.Sprintf("SELECT name FROM %s WHERE name = $1", m.Table())
-		row  = m.db.QueryRowContext(ctx, sql, mig.Name)
 		name string
+		row  = m.db.QueryRowContext(ctx, sql, mig.Name)
 	)
 
 	row.Scan(&name)

@@ -5,22 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"text/tabwriter"
-	"time"
 
 	"github.com/cristosal/migra"
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/spf13/cobra"
 )
 
 var (
-	connectionString string
+	// global options
 	driver           string
+	connectionString string
 	tableName        string
 	schemaName       string
-	popUntil         string
-	popAll           bool
-	pushDir          string
+
+	// pop options
+	popUntil string
+	popAll   bool
+
+	// push options
+	pushDir string
 
 	root = &cobra.Command{
 		Use:          "migra",
@@ -33,6 +37,7 @@ var (
 		Short: "Creates migration tables",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := getMigra()
+
 			if err != nil {
 				return err
 			}
@@ -42,8 +47,9 @@ var (
 	}
 
 	pop = &cobra.Command{
-		Use:   "pop",
-		Short: "Undo last migration",
+		Use:     "pop",
+		Aliases: []string{"rm", "remove", "down"},
+		Short:   "Undo migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := getMigra()
 			if err != nil {
@@ -73,8 +79,9 @@ var (
 	}
 
 	push = &cobra.Command{
-		Use:   "push",
-		Short: "Pushes a new migration",
+		Use:     "push",
+		Aliases: []string{"add", "up"},
+		Short:   "Pushes a new migration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := getMigra()
 			if err != nil {
@@ -97,8 +104,9 @@ var (
 	}
 
 	list = &cobra.Command{
-		Use:   "list",
-		Short: "list all migrations",
+		Use:     "list",
+		Short:   "list all migrations",
+		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := getMigra()
 			if err != nil {
@@ -114,15 +122,18 @@ var (
 				return errors.New("no migrations")
 			}
 
-			tw := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-			defer tw.Flush()
-			fmt.Fprintf(tw, "| %s\t| %s\t| %s\t| %s\n", "ID", "Name", "Description", "Migrated At")
 			for i := range migrations {
 				mig := migrations[i]
-				fmt.Fprintf(tw, "| %d\t| %s\t| %s\t| %s\n", mig.ID, mig.Name, mig.Description, mig.MigratedAt.Format(time.RFC1123))
+				fmt.Println("-- Migration")
+				fmt.Printf("ID: %d\n", mig.ID)
+				fmt.Printf("Name: %s\n", mig.Name)
+				fmt.Printf("Migrated At: %s\n", mig.MigratedAt.String())
+				fmt.Printf("Description: %s\n", mig.Description)
+				fmt.Printf("Up: %s\n", mig.Up)
+				fmt.Printf("Down: %s\n", mig.Down)
 			}
-			return nil
 
+			return nil
 		},
 	}
 
@@ -135,13 +146,14 @@ func main() {
 }
 
 func init() {
+	root.PersistentFlags().StringVar(&driver, "driver", "", "database driver to use. If unset the environment variable for MIGRA_DRIVER is used otherwise the default driver is pgx.")
 	root.PersistentFlags().StringVar(&connectionString, "conn", "", "database connection string. If unset, defaults to environment variable MIGRA_CONNECTION_STRING")
-	root.PersistentFlags().StringVar(&driver, "driver", "pgx", "database driver")
 	root.PersistentFlags().StringVarP(&tableName, "table", "t", migra.DefaultMigrationTable, "migrations table to use")
 	root.PersistentFlags().StringVarP(&schemaName, "schema", "s", migra.DefaultSchemaName, "schema to use")
 
 	pop.Flags().StringVar(&popUntil, "until", "", "pop until migration with this name is reached")
 	pop.Flags().BoolVarP(&popAll, "all", "a", false, "pop all migrations")
+
 	push.Flags().StringVarP(&pushDir, "dir", "d", "", "directory containing migration files")
 	push.Flags().StringVar(&migration.Name, "name", "", "name of migration")
 	push.Flags().StringVar(&migration.Description, "desc", "", "description of migration")
@@ -150,7 +162,8 @@ func init() {
 }
 
 func getMigra() (*migra.Migra, error) {
-	db, err := sql.Open(driver, getConnectionString())
+	db, err := sql.Open(getDriver(), getConnectionString())
+
 	if err != nil {
 		return nil, err
 	}
@@ -168,4 +181,18 @@ func getConnectionString() string {
 	}
 
 	return os.Getenv("MIGRA_CONNECTION_STRING")
+}
+
+func getDriver() string {
+	if driver != "" {
+		return driver
+	}
+
+	env := os.Getenv("MIGRA_DRIVER")
+
+	if env != "" {
+		return env
+	}
+
+	return "pgx"
 }
