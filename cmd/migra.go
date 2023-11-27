@@ -29,13 +29,13 @@ var (
 
 	root = &cobra.Command{
 		Use:          "migra",
-		Short:        "Migration commands",
+		Short:        "migra is a command line interface and library for managing sql migrations",
 		SilenceUsage: true,
 	}
 
 	initialize = &cobra.Command{
 		Use:   "init",
-		Short: "Creates migration tables",
+		Short: "Creates migration tables and schema if specified.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := getMigra()
 

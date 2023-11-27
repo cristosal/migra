@@ -139,15 +139,15 @@ func (m *Migra) PushFile(ctx context.Context, filepath string) error {
 	return m.Push(ctx, &migration)
 }
 
-func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS, directory string) error {
+func (m *Migra) PushDirFS(ctx context.Context, filesystem fs.FS, dirpath string) error {
 	// here is where we read
-	entries, err := fs.ReadDir(filesystem, directory)
+	entries, err := fs.ReadDir(filesystem, dirpath)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		filename := path.Join(directory, entry.Name())
+		filename := path.Join(dirpath, entry.Name())
 
 		if entry.IsDir() {
 			if err := m.PushDirFS(ctx, filesystem, filename); err != nil {
@@ -396,21 +396,5 @@ func (m *Migra) List(ctx context.Context) ([]Migration, error) {
 // Drop the migrations table
 func (m *Migra) Drop(ctx context.Context) error {
 	_, err := m.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", m.Table()))
-	return err
-}
-
-func (m *Migra) insertMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) error {
-	sql := fmt.Sprintf("INSERT INTO %s (name, description, up, down) VALUES ($1, $2, $3, $4)", m.Table())
-	_, err := tx.ExecContext(ctx, sql, mig.Name, mig.Description, mig.Up, mig.Down)
-	return err
-}
-
-func (m *Migra) upMigrationTx(ctx context.Context, tx *sql.Tx, mig *Migration) error {
-	if _, err := tx.ExecContext(ctx, mig.Up); err != nil {
-		return err
-	}
-
-	sql := fmt.Sprintf("UPDATE %s SET migrated_at = NOW() WHERE name = $1", m.Table())
-	_, err := tx.ExecContext(ctx, sql, mig.Name)
 	return err
 }
