@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cristosal/migra"
 	_ "github.com/go-sql-driver/mysql"
@@ -124,13 +125,11 @@ var (
 
 			for i := range migrations {
 				mig := migrations[i]
-				fmt.Println("-- Migration")
-				fmt.Printf("ID: %d\n", mig.ID)
-				fmt.Printf("Name: %s\n", mig.Name)
-				fmt.Printf("Migrated At: %s\n", mig.MigratedAt.String())
-				fmt.Printf("Description: %s\n", mig.Description)
-				fmt.Printf("Up: %s\n", mig.Up)
-				fmt.Printf("Down: %s\n", mig.Down)
+				fmt.Println("")
+				fmt.Printf("--- %d %s ---\n", mig.ID, mig.Name)
+				fmt.Printf("%s\n\n", mig.Description)
+				fmt.Printf("Up: %s\n", strings.Trim(mig.Up, " \t"))
+				fmt.Printf("Down: %s\n", strings.Trim(mig.Down, " \t"))
 			}
 
 			return nil
