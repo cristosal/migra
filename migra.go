@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path"
 	"time"
@@ -171,7 +170,6 @@ func (m *Migra) PushFS(ctx context.Context, filesystem fs.FS) error {
 // PushFileFS pushes a file with given name from the filesystem
 func (m *Migra) PushFileFS(ctx context.Context, filesystem fs.FS, filename string) error {
 	v := viper.New()
-	log.Printf("running file %s", filename)
 
 	f, err := filesystem.Open(path.Join(".", filename))
 

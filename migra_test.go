@@ -2,7 +2,9 @@ package migra_test
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"os"
 	"path"
 	"testing"
@@ -11,12 +13,16 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-var ctx = context.Background()
-var connectionString = ""
+var (
+	ctx              = context.Background()
+	connectionString = os.Getenv("MIGRA_CONNECTION_STRING")
+	driver           = os.Getenv("MIGRA_DRIVER")
+)
 
 func TestPushDirFS(t *testing.T) {
-	m := initMigra(t)
-	dirpath, err := os.MkdirTemp(os.TempDir(), "pushdir")
+	m := getMigra(t)
+
+	dirpath, err := os.MkdirTemp(os.TempDir(), "migrations")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,15 +44,14 @@ down: "DROP TABLE test_first_migration_table;"`
 		t.Fatal(err)
 	}
 
-	if err := m.PushFS(context.Background(), filesystem); err != nil {
+	if err := m.PushDirFS(context.Background(), filesystem, "."); err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestPushDir(t *testing.T) {
-	m := initMigra(t)
-	dirpath, err := os.MkdirTemp(os.TempDir(), "pushdir")
+	m := getMigra(t)
+	dirpath, err := os.MkdirTemp(os.TempDir(), "migrations")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +77,8 @@ down: "DROP TABLE test_first_migration_table;"`
 
 }
 
-func TestRepeatedUp(t *testing.T) {
-	m := initMigra(t)
+func TestUp(t *testing.T) {
+	m := getMigra(t)
 
 	migration := migra.Migration{
 		Name: "Migration",
@@ -89,25 +94,31 @@ func TestRepeatedUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// repeated push errors because we have no migrations
 	if err := m.Push(ctx, &migration); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func initMigra(t *testing.T) *migra.Migra {
-	db, err := sql.Open("pgx", connectionString)
-
+func getMigra(t *testing.T) *migra.Migra {
+	db, err := sql.Open(driver, connectionString)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	m := migra.New(db)
 
+	m.SetSchema("test")
+	table := "test_" + randString(t, 8)
+	m.SetMigrationsTable(table)
+
 	if err := m.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 
+	// removes all migrations and drops migration table when done
 	t.Cleanup(func() {
+		m.PopAll(ctx)
 		m.Drop(ctx)
 	})
 
@@ -115,10 +126,7 @@ func initMigra(t *testing.T) *migra.Migra {
 }
 
 func TestMigrateUp(t *testing.T) {
-	m := initMigra(t)
-	if _, err := m.PopAll(ctx); err != nil {
-		t.Fatal(err)
-	}
+	m := getMigra(t)
 
 	migrations := []migra.Migration{
 		{
@@ -189,4 +197,13 @@ func TestMigrateUp(t *testing.T) {
 	}
 
 	expectUsername(t, "first")
+}
+
+func randString(t *testing.T, length int) string {
+	buf := make([]byte, length)
+	if _, err := rand.Reader.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+
+	return hex.EncodeToString(buf)
 }
