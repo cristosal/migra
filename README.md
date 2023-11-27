@@ -6,9 +6,9 @@ Migra is a command line interface and library for managing sql migrations.
 
 In order to use migra as a library, import the package as follows.
 
-`go get -u github.com/cristosa/migra`
+`go get -u github.com/cristosal/migra`
 
-To build and install the CLI from source run the following command. 
+To build and install the CLI from source run the following command.
 This assumes you have `go` installed in your local environment, and have cloned the repo
 
 `go install ./cmd/migra.go`
@@ -58,9 +58,10 @@ This Migration can then be reversed by calling the Pop method
 ```go
 m.Pop(context.TODO())
 ```
-### Using Migration Files
 
-Migra also supports defining migrations in files. 
+## Using Migration Files
+
+Migra also supports defining migrations in files.
 
 Any file format that is compatible with [viper](https://github.com/spf13/viper) can be used. This includes `json` `yaml` `toml` `ini` among many others.
 
@@ -72,6 +73,7 @@ Each migration file must define the following properties
 - `down` - sql to be executed in order to reverse the migration
 
 Here is an example of a migration file using `toml`
+
 ```toml
 # 1-users-table.toml
 
@@ -106,5 +108,36 @@ func PushFileFS(ctx context.Context, filesystem fs.FS, filepath string) error
 //PushDirFS is same as PushDir but looks for the dirpath in the filesystem
 func PushDirFS(ctx context.Context, filesystem fs.FS, dirpath string) error
 ```
->NOTE: PushDirFS and PushFS are recursive and will push any migration files found in subdirectories
 
+> NOTE: PushDirFS and PushFS are recursive and will push any migration files found in subdirectories
+
+## CLI
+
+When using the CLI, many of migra's methods map to commands with flags. For example:
+
+`PushDir` becomes `migra push -d <directory>`
+`PopAll` becomes `migra pop -a`
+
+```
+A Command Line Interface for managing sql migrations
+
+Usage:
+  migra [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  init        Creates migration tables and schema if specified.
+  list        list all migrations
+  pop         Undo migration
+  push        Pushes a new migration
+
+Flags:
+      --conn string     database connection string. If unset, defaults to environment variable MIGRA_CONNECTION_STRING
+      --driver string   database driver to use. If unset the environment variable for MIGRA_DRIVER is used otherwise the default driver is pgx.
+  -h, --help            help for migra
+  -s, --schema string   schema to use (default "public")
+  -t, --table string    migrations table to use (default "_migrations")
+
+Use "migra [command] --help" for more information about a command.
+```
