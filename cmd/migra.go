@@ -43,7 +43,7 @@ var (
 				return err
 			}
 
-			return m.Init(cmd.Context())
+			return m.CreateMigrationTable(cmd.Context())
 		},
 	}
 
@@ -168,7 +168,7 @@ func getMigra() (*migra.Migra, error) {
 	}
 
 	m := migra.New(db).
-		SetMigrationsTable(tableName).
+		SetMigrationTable(tableName).
 		SetSchema(schemaName)
 
 	return m, nil

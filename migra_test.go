@@ -110,16 +110,16 @@ func getMigra(t *testing.T) *migra.Migra {
 
 	m.SetSchema("test")
 	table := "test_" + randString(t, 8)
-	m.SetMigrationsTable(table)
+	m.SetMigrationTable(table)
 
-	if err := m.Init(ctx); err != nil {
+	if err := m.CreateMigrationTable(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	// removes all migrations and drops migration table when done
 	t.Cleanup(func() {
 		m.PopAll(ctx)
-		m.Drop(ctx)
+		m.DropMigrationTable(ctx)
 	})
 
 	return m
