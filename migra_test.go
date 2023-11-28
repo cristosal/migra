@@ -3,7 +3,6 @@ package migra_test
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"os"
 	"path"
@@ -101,12 +100,10 @@ func TestUp(t *testing.T) {
 }
 
 func getMigra(t *testing.T) *migra.Migra {
-	db, err := sql.Open(driver, connectionString)
+	m, err := migra.Open(driver, connectionString)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	m := migra.New(db)
 
 	m.SetSchema("test")
 	table := "test_" + randString(t, 8)
