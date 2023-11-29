@@ -1,5 +1,7 @@
 # Migra
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/cristosal/migra.svg)](https://pkg.go.dev/github.com/cristosal/migra)
+
 Migra is a command line interface and library for managing sql migrations.
 
 ## Installation
